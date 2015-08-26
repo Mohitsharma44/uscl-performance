@@ -61,7 +61,7 @@ class CodeTester():
                 self.dict_formatted_li[key].append(value)
                 
         # Add username to the dictionary        
-        self.dict_formatted_li['name'] = username
+        self.dict_formatted_li['name'] = ''.join(username.split('_'))
         # Convert to json format
         self.json_formatted_di = json.dumps(self.dict_formatted_li, sort_keys=True, indent=4)
         

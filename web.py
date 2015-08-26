@@ -10,61 +10,14 @@ from tornado import gen
 import tornado.web
 import tornado.ioloop
 import motor
-
-class MainHandler(tornado.web.RequestHandler):
-        def get(self):
-                """Show a 'compose message' form
-                """
-                self.write('<a href="/check">Check for an entry</a><br>')
-                self.write('''
-                <form method="post">
-                <input type="text" name="msg">
-                <input type="submit">
-                </form>''')
-                            
-        # Method exits before the HTTP request completes, thus "asynchronous"
-        @tornado.web.asynchronous
-        def post(self):
-            """Insert a message
-            """
-            self.write('<a href="/check">Check for an entry</a><br>')
-            
-            msg = self.get_argument('msg')
-            
-            # Async insert; callback is executed when insert completes
-            self.settings['db'].messages.insert(
-                {'msg':msg},
-                callback = self._on_response)
-
-        def _on_response(self, result, error):
-            if error:
-                raise tornado.web.HTTPError(500, error)
-            else:
-                self.redirect('/')
-
-
-class MessageHandler(tornado.web.RequestHandler):
-        @tornado.web.asynchronous
-        def get(self):
-                """Display all messages
-                """
-                self.write('<a href="/new_entry">Compose a message</a><br>')
-                self.write('<a href="/check">Check for an entry</a><br>')
-                self.write('<ul>')
-                db = self.settings['db']
-                db.messages.find().sort([('_id', -1)]).each(self._got_message)
-                
-        def _got_message(self, message, error):
-                if error:
-                        raise tornado.web.HTTPError(500, error)
-                elif message:
-                        self.write('<li>%s</li>' % message['msg'])
-                else:
-                        # Iteration complete
-                        self.write('</ul>')
-                        self.finish()
+import re
+import json
 
 class CheckHandler(tornado.web.RequestHandler):
+
+        def access_db(self):
+                print 'Accessing db'
+        
         def get(self):
                 '''
                 Take input to search
@@ -72,7 +25,7 @@ class CheckHandler(tornado.web.RequestHandler):
                 self.write('<a href="/new_entry">Compose a message</a><br>')
                 self.write('''
                 <form method="post">
-                <input type='text', name='msg'>
+                <input type='text', name='username'>
                 <input type='submit'>
                 </form>
                 ''')
@@ -83,27 +36,65 @@ class CheckHandler(tornado.web.RequestHandler):
                 Search for the String
                 '''
                 self.write('<a href="/new_entry">Compose a message</a><br>')
-                self.write('<ul>')
-                msg = self.get_argument('msg')
+                self.write('<table style="width:50%">')
+                username = self.get_argument('username')
                 db = self.settings['db']
-                db.messages.find({'msg':msg}).sort([('_id',-1)]).each(self._on_response)
+                self.write('<caption style="text-align:center"><b>%s</b></caption>'%username)
+                db.performance_collection.find({'name':re.compile(username, re.IGNORECASE)},
+                                               {'symbol':1, 'name':1, 'module':1,
+                                                'line':1}).sort([{'_id',-1}]).each(self._on_response)
+
+                #db.performance_collection.find({'name':re.compile(username, re.IGNORECASE)}).count()
                 
+        def _on_response(self, message, error):
+                try:
+                        self.count = len(message['module'])
+                except Exception, e:
+                        pass
+                if error:
+                        raise tornado.web.HTTPError(500, error)
+                elif message:
+                        self.write('<tr>')
+                        self.write('<th style="text-align:left"> Message </th>')
+                        self.write('<th style="text-align:left"> Program Name (.py) </th>')
+                        self.write('<th style="text-align:left"> Line no. </th>')
+                        for i in range(len(message['symbol'])):
+                                self.write('<tr>')
+                                self.write('<td>%s</td><td>%s</td><td>%s</td>'%(message['symbol'][i],
+                                                                                message['module'][i],
+                                                                                message['line'][i]))
+                                self.write('</tr>')
+                else:
+                        #Iteration complete
+                        self.write('</table><br><br>')
+                        #self.write('<b>Total Submissions Done: %d</b>'%self.count)
+                        self.finish()
+
+class ApiHandler(tornado.web.RequestHandler):
+        @tornado.web.asynchronous
+        def get(self):
+                a = self.get_argument('username')
+                cursor = db.performance_collection.find({'name':re.compile(a, re.IGNORECASE)},
+                                               {'_id':0, 'symbol':1, 'name':1, 'module':1,
+                                                'line':1}).sort([{'_id',-1}]).each(self._on_response)
         def _on_response(self, message, error):
                 if error:
                         raise tornado.web.HTTPError(500, error)
                 elif message:
-                        self.write('<li>%s</li>'%message['msg'])
+                        self.write(json.dumps(message, sort_keys=True, indent=4))
                 else:
-                        #Iteration complete
-                        self.write('</ul>')
                         self.finish()
+                        
+        @tornado.web.asynchronous
+        def post(self):
+                pass
 
-db = motor.MotorClient().test
+                        
+db = motor.MotorClient().uscl_performance
 
 application = tornado.web.Application([
-        (r'/new_entry', MainHandler),
-        (r'/', MessageHandler),
-        (r'/check', CheckHandler)
+        (r'/check', CheckHandler),
+        (r'/api', ApiHandler)
 ], db=db)
 
 def main():
