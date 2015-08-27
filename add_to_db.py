@@ -3,7 +3,7 @@ import pymongo
 import subprocess
 import os
 from collections import defaultdict
-from pyprind import ProgBar
+#from pyprind import ProgBar
 
 class CodeTester():
     '''
